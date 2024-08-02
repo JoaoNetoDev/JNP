@@ -246,7 +246,21 @@ class JNP
     
     public static function logTxt($class){
         
-        TTransaction::setLogger(new TLoggerTXT('app/resources/log/log_' . $class . '_' . date('Ymd') . '.txt'));
+        $dirPath = 'app/resources/log';
+        if (!is_dir($dirPath)) {
+            // Tenta criar o diretório e define as permissões (0777 permite leitura, escrita e execução para todos os usuários)
+            if (mkdir($dirPath, 0775, true)) {
+                // echo "Diretório '$dirPath' criado com sucesso.";
+            } else {
+                // echo "Falha ao criar o diretório '$dirPath'.";
+            }
+        } else {
+            // echo "O diretório '$dirPath' já existe.";
+        }
+        
+        if (is_dir($dirPath)) {
+            TTransaction::setLogger(new TLoggerTXT('app/resources/log/log_' . $class . '_' . date('Ymd') . '.txt'));
+        }
         
     }
     
