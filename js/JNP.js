@@ -184,3 +184,17 @@ function copyToClipboard(text) {
         console.log('Clipboard API não suportada');
     }
 }
+
+
+
+function ttable_replace_row_by_id(a, b, c) {
+    var tbody = $("#" + a + " tbody");
+    var row = tbody.find("#" + b);
+    var decodedContent = base64_decode(c);
+
+    if (row.length > 0) {
+        row.replaceWith(decodedContent);
+    } else {
+        tbody.prepend(decodedContent);
+    }
+}
