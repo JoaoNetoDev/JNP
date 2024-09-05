@@ -315,6 +315,23 @@ class JNP
         }
         return '';
     }
+    
+    public static function verificaCriaPasta($pasta){
+        if (!file_exists($pasta)) {
+            // Tenta criar a pasta e suas subpastas (se necessário)
+            if (mkdir($pasta, 0777, true)) {
+                // echo "Pasta '$pasta' criada com sucesso!";
+            } else {
+                // echo "Erro ao criar a pasta '$pasta'. Verifique as permissões.";
+                return false;
+            }
+        } else {
+            // echo "A pasta '$pasta' já existe.";
+            return false;
+        }
+        
+        return true;
+    }
 
     
 }
