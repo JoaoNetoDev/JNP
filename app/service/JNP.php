@@ -2,6 +2,11 @@
 
 class JNP
 {
+    
+    private static $router;
+    private static $request_id;
+    private static $debug;
+    
     public function __construct($param)
     {
         
@@ -73,18 +78,24 @@ class JNP
         return $obj_tentry->id;
     }
     
-    public static function converterData($data, $formatoEntrada, $formatoSaida) {
+    public static function converterData($data, $formatoEntrada, $formatoSaida, $includeTime = false) {
         // Cria um objeto DateTime a partir da string de data e do formato de entrada
         $dataObjeto = DateTime::createFromFormat($formatoEntrada, $data);
-    
+        
         // Verifica se a data é válida
         if (!$dataObjeto) {
             return false;  // Retorna falso se a data for inválida
         }
     
-        // Formata a data para o novo formato e retorna
+        // Adiciona horário e fuso horário se necessário
+        if ($includeTime) {
+            $dataObjeto->setTime(0, 0, 0); // Define o horário para meia-noite, por exemplo
+        }
+    
+        // Retorna a data no formato solicitado
         return $dataObjeto->format($formatoSaida);
     }
+
     
     public static function consoleJson($param){
         if(is_array($param)){
@@ -152,43 +163,58 @@ class JNP
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
     
-    public static function mask_CPF_CNPJ($formName, $name){
-        
-        TScript::create("
-        
-            var options = {
-        		onKeyPress : function(cpfcnpj, e, field, options) {
-        			var masks = ['000.000.000-000', '00.000.000/0000-00'];
-        			var mask = (cpfcnpj.length > 14) ? masks[1] : masks[0];
-        			$('form[name=\"$formName\"] [name=\"$name\"]').mask(mask, options);
-        		}
-        	};
-        
-        	$('form[name=\"$formName\"] [name=\"$name\"]').mask('000.000.000-000', options);
-
-        
-        ");
-        
+    public static function is_uuid($uuid)
+    {
+        // Regex para validar UUID no formato padrão (versão 1-5)
+        $pattern = '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i';
+        return (bool) preg_match($pattern, $uuid);
     }
     
-    public static function mask_fone_br($formName, $name){
+    public static function mask_CPF_CNPJ($formName, $name) {
         TScript::create("
-            $('form[name=\"{$formName}\"] [name=\"$name\"]').on('keyup change', function() {
-                var numero = $(this).val().replace(/\D/g,'');
-                var newMask = (numero.length <= 10) ? '(99) 9999-99999' : '(99)99999-9999';
-
-                $(this).val(numero);
-                $(this).mask(newMask);
-                $(this).data('mask', newMask);
-
-                var newLength = $(this).val().length;
-                this.setSelectionRange(newLength, newLength);
-            
-                $('form[name=\"{$formName}\"] [name=\"$name\"]').attr('autocomplete', 'on');
-                
+            function JNP_CHANGE_MASK_CPFCNPJ(element) {
+                    var cpfcnpj = $(element).val().replace(/[^0-9]/g, '');
+                    
+                    var mask = (cpfcnpj.length > 11) ? '00.000.000/0000-00' : '0000000.000.000-00';
+                    
+                    $(element).mask(mask, { reverse: true });
+            }
+    
+            $('form[name=\"$formName\"] [name=\"$name\"]').each(function() {
+                JNP_CHANGE_MASK_CPFCNPJ(this);
+            });
+    
+            $('form[name=\"$formName\"] [name=\"$name\"]').on('keyup change input paste', function() {
+                JNP_CHANGE_MASK_CPFCNPJ(this);
             });
         ");
     }
+
+
+
+    
+    public static function mask_fone_br($formName, $name){
+        TScript::create("
+            function JNP_APPLY_MASK_FONE(element) {
+                var numero = $(element).val().replace(/\D/g,'');
+                
+                var newMask = (numero.length <= 10) ? '(99) 9999-999999' : '(99) 99999-9999';
+    
+                $(element).mask(newMask);
+    
+                $(element).val($(element).masked(numero));
+            }
+    
+            $('form[name=\"$formName\"] [name=\"$name\"]').each(function() {
+                JNP_APPLY_MASK_FONE(this);
+            });
+    
+            $('form[name=\"$formName\"] [name=\"$name\"]').on('keyup change input', function() {
+                JNP_APPLY_MASK_FONE(this);
+            });
+        ");
+    }
+
     
     public static function registerURL($url){
         TScript::create("
@@ -245,23 +271,16 @@ class JNP
     }
     
     public static function logTxt($class){
+        $directory = 'app/resources/log/';
         
-        $dirPath = 'app/resources/log';
-        if (!is_dir($dirPath)) {
-            // Tenta criar o diretório e define as permissões (0777 permite leitura, escrita e execução para todos os usuários)
-            if (mkdir($dirPath, 0775, true)) {
-                // echo "Diretório '$dirPath' criado com sucesso.";
-            } else {
-                // echo "Falha ao criar o diretório '$dirPath'.";
-            }
-        } else {
-            // echo "O diretório '$dirPath' já existe.";
+        // Verifica se o diretório existe
+        if (!is_dir($directory)) {
+            // Cria o diretório, se não existir
+            mkdir($directory, 0755, true); // 0755 é a permissão, 'true' cria diretórios recursivamente
         }
-        
-        if (is_dir($dirPath)) {
-            TTransaction::setLogger(new TLoggerTXT('app/resources/log/log_' . $class . '_' . date('Ymd') . '.txt'));
-        }
-        
+    
+        // Define o logger
+        TTransaction::setLogger(new TLoggerTXT($directory . 'log_' . $class . '_' . date('Ymd') . '.txt'));
     }
     
     public static function cpfCnpjHideParcial($value) {
@@ -316,22 +335,278 @@ class JNP
         return '';
     }
     
-    public static function verificaCriaPasta($pasta){
-        if (!file_exists($pasta)) {
-            // Tenta criar a pasta e suas subpastas (se necessário)
-            if (mkdir($pasta, 0777, true)) {
-                // echo "Pasta '$pasta' criada com sucesso!";
-            } else {
-                // echo "Erro ao criar a pasta '$pasta'. Verifique as permissões.";
-                return false;
+    public static function jnp_run($debug = FALSE)
+    {
+        $retorno = '';
+        
+        self::$request_id = uniqid();
+        self::$debug = $debug;
+        
+        $ini = AdiantiApplicationConfig::get();
+        $service = isset($ini['general']['request_log_service']) ? $ini['general']['request_log_service'] : '\SystemRequestLogService';
+        $class   = isset($_REQUEST['class'])    ? $_REQUEST['class']   : '';
+        $static  = isset($_REQUEST['static'])   ? $_REQUEST['static']  : '';
+        $method  = isset($_REQUEST['method'])   ? $_REQUEST['method']  : '';
+        
+        $content = '';
+        set_error_handler(array('AdiantiCoreApplication', 'errorHandler'));
+        
+        if (!empty($ini['general']['request_log']) && $ini['general']['request_log'] == '1')
+        {
+            if (empty($ini['general']['request_log_types']) || strpos($ini['general']['request_log_types'], 'web') !== false)
+            {
+                self::$request_id = $service::register( 'web');
             }
-        } else {
-            // echo "A pasta '$pasta' já existe.";
-            return false;
         }
         
+        AdiantiCoreApplication::filterInput();
+        
+        $rc = new ReflectionClass($class);
+        
+        if (in_array(strtolower($class), array_map('strtolower', AdiantiClassMap::getInternalClasses()) ))
+        {
+            ob_start();
+            new TMessage( 'error', AdiantiCoreTranslator::translate('The internal class ^1 can not be executed', " <b><i><u>{$class}</u></i></b>") );
+            $content = ob_get_contents();
+            ob_end_clean();
+        }
+        else if (!$rc->isUserDefined())
+        {
+            ob_start();
+            new TMessage( 'error', AdiantiCoreTranslator::translate('The internal class ^1 can not be executed', " <b><i><u>{$class}</u></i></b>") );
+            $content = ob_get_contents();
+            ob_end_clean();
+        }
+        else if (class_exists($class))
+        {
+            if ($static)
+            {
+                $rf = new ReflectionMethod($class, $method);
+                if ($rf-> isStatic ())
+                {
+                    call_user_func(array($class, $method), $_REQUEST);
+                }
+                else
+                {
+                    call_user_func(array(new $class($_REQUEST), $method), $_REQUEST);
+                }
+            }
+            else
+            {
+                try
+                {
+                    $page = new $class( $_REQUEST );
+                    
+                    ob_start();
+                    $page->show( $_REQUEST );
+                    $content = ob_get_contents();
+                    ob_end_clean();
+                }
+                catch (Exception $e)
+                {
+                    ob_start();
+                    if ($debug)
+                    {
+                        new TExceptionView($e);
+                        $content = ob_get_contents();
+                    }
+                    else
+                    {
+                        new TMessage('error', $e->getMessage());
+                        $content = ob_get_contents();
+                    }
+                    ob_end_clean();
+                }
+                catch (Error $e)
+                {
+                    
+                    ob_start();
+                    if ($debug)
+                    {
+                        new TExceptionView($e);
+                        $content = ob_get_contents();
+                    }
+                    else
+                    {
+                        new TMessage('error', $e->getMessage());
+                        $content = ob_get_contents();
+                    }
+                    ob_end_clean();
+                }
+            }
+        }
+        else if (!empty($class))
+        {
+            new TMessage('error', AdiantiCoreTranslator::translate('Class ^1 not found', " <b><i><u>{$class}</u></i></b>") . '.<br>' . AdiantiCoreTranslator::translate('Check the class name or the file name').'.');
+        }
+        
+        if (!$static)
+        {
+            $retorno .= TPage::getLoadedCSS();
+        }
+        $retorno .= TPage::getLoadedJS();
+        
+        $retorno .= $content;
+        
+        return $retorno;
+    }
+    
+    
+    
+    // dump
+    public static function d(...$args)
+    {
+        $bt = debug_backtrace();
+        while(count($bt) and strpos($bt[0]['file'], __FILE__) !== false) array_shift($bt);
+        $title = ['d' => 'DUMP', 'dd' => 'DUMP AND DIE', 'de' => 'DUMP AND END'][$bt[0]['function']] . " {$bt[0]['file']}:{$bt[0]['line']}";
+        
+        ob_start();
+        foreach($args as $arg){
+            echo "<pre>";
+                $type = gettype($arg);
+                $typeName = $type; // Assume o tipo primitivo inicialmente.
+                
+                // Cálculo de tamanho para os tipos.
+                if ($type === 'object') {
+                    $typeName = get_class($arg) . ' (object)';
+                    $size = count((array)$arg);  // Conta o número de propriedades públicas do objeto.
+                } elseif ($type === 'array') {
+                    $typeName = 'Array (array)';
+                    $size = count($arg); // Conta o número de elementos no array.
+                } elseif ($type === 'string') {
+                    $typeName = 'String';
+                    $size = mb_strlen($arg); // Conta o número de caracteres na string.
+                } elseif ($type === 'integer' || $type === 'double' || $type === 'boolean' || $type === 'NULL') {
+                    // $size = serialize($arg); // Calcula o tamanho aproximado em bytes.
+                    $size = false;
+                }
+        
+                // Tratamento do output para cada tipo de dado.
+                $output = var_export($arg, true);
+                $txt_size = ($size !== false) ? "(size={$size})" : "";
+                if ($type === 'object' || $type === 'array') {
+                    $output = "{$typeName} {$txt_size}\n" . $output;
+                } else {
+                    $output = "{$typeName} {$txt_size} (" . $output . ")";
+                }
+                
+                highlight_string("<?php\n" . $output . "\n?>");
+                
+            echo "</pre>";
+        }
+        // $win = TWindow::create($title, 0.9999, 0.9999);
+        // $win->add(ob_get_clean());
+        // $win->show();
+        TSession::setValue('debugDump_string', base64_encode( ob_get_clean() ));
+        self::open_blank('debugDump', 'onShow', [] /* ['dump' => base64_encode( ob_get_clean() )] */);
+        TScript::create("__adianti_unblock_ui(); __adianti_unblock_ui();");
+    }
+    
+    // dump and die
+    public static function dd(...$args) {
+        d(...$args);
+        TScript::create("
+        
+            __adianti_unblock_ui();
+            __adianti_unblock_ui();
+        
+        ");
+        die();
+    }
+    
+    // dump and exception
+    public static function de(...$args) {
+        d(...$args);
+        TScript::create("
+        
+            __adianti_unblock_ui();
+            __adianti_unblock_ui();
+        
+        ");
+        throw new Exception("Stop");
+    }
+    
+    public static function retornarNumeros($string)
+    {
+        // Utiliza expressão regular para manter apenas os números
+        return preg_replace('/\D/', '', $string);
+    }
+    
+    public static function verificaCriaPasta($pasta)
+    {
+        if (!file_exists($pasta)) {
+            // Tenta criar a pasta e suas subpastas (se necessário)
+            if (!mkdir($pasta, 0777, true)) {
+                // error_log("Erro ao criar a pasta '$pasta'. Verifique as permissões.");
+                return false;
+            }
+        }
+
+        // Verifica se a pasta existe e é gravável
+        if (!is_dir($pasta) || !is_writable($pasta)) {
+            // error_log("A pasta '$pasta' não é gravável ou não existe.");
+            return false;
+        }
+
         return true;
     }
-
+    
+    public static function deletarPasta($dir) {
+        if (!is_dir($dir)) {
+            return;
+        }
+    
+        $files = array_diff(scandir($dir), ['.', '..']);
+        
+        foreach ($files as $file) {
+            $path = "$dir/$file";
+            if (is_dir($path)) {
+                self::deletarPasta($path);
+            } else {
+                unlink($path);
+            }
+        }
+    
+        rmdir($dir);
+    }
+    
+    public static function renderApplication($param)
+    {
+        // Salva as superglobais originais
+        $original_request = $_REQUEST;
+        $original_get = $_GET;
+        $original_post = $_POST;
+        
+        // Configura $_REQUEST, $_GET e $_POST com os parâmetros necessários
+        $_REQUEST = $param;
+        $_GET = $param;
+        $_POST = []; // Supondo que seja uma requisição GET
+        
+        // Inicia o buffer de saída
+        ob_start();
+        
+        try
+        {
+            // Executa a aplicação para processar a requisição
+            AdiantiCoreApplication::run();
+        }
+        catch (Exception $e)
+        {
+            ob_clean(); // Limpa qualquer saída anterior
+            new TMessage('error', $e->getMessage());
+        }
+        
+        // Captura o conteúdo do buffer
+        $html = ob_get_contents();
+        ob_end_clean();
+        
+        // Restaura as superglobais originais
+        $_REQUEST = $original_request;
+        $_GET = $original_get;
+        $_POST = $original_post;
+        
+        // Retorna o HTML capturado
+        return $html;
+    }
     
 }
