@@ -607,6 +607,24 @@ class JNP
         
         // Retorna o HTML capturado
         return $html;
+    }    
+    public static function renomearAtributo(&$object, $atributoAntigo, $atributoNovo){
+        if ($object->{$atributoAntigo} ?? false) {
+            $object->{$atributoNovo} = $object->{$atributoAntigo};
+            unset($object->{$atributoAntigo});
+        }
+    }
+    
+    public static function TEntry2TLabel($entrada)
+    {
+        // Captura o valor do TEntry
+        $valor = $entrada->getValue();
+        
+        // Cria um TLabel com o valor capturado
+        $label = new TLabel($valor);
+        
+        // Retorna o TLabel criado
+        return $label;
     }
     
 }
