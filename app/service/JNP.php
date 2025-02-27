@@ -626,5 +626,46 @@ class JNP
         // Retorna o TLabel criado
         return $label;
     }
+
+    public static function combinarArrayDinamico($arrays) {
+        $resultado = array();
+
+        $chaves = array_keys($arrays);
+        $tamanho = count($arrays[$chaves[0]]);
+
+        for ($i = 0; $i < $tamanho; $i++) {
+            $item = array();
+            foreach ($arrays as $chave => $valores) {
+                $item[$chave] = $valores[$i];
+            }
+            $resultado[] = $item;
+        }
+
+        // LibUtil::meu_vardump($resultado);
+        return $resultado;
+    }
+
+    public static function post_data($formName, $class, $method, $param = []){
+        $query = AdiantiCoreApplication::buildHttpQuery($class, $method, $param);
+        $query = str_replace('index.php', 'engine.php', $query);
+        $command = "__jnp_post_data('{$formName}', '{$query}');";
+        // echo $command;
+        TScript::create($command, true, 1);
+    }
+
+    
+    public static function combinarFormaValor($arrForma, $arrValor) {
+        $resultado = array();
+
+        foreach ($arrForma as $k => $v){
+            $resultado[$k] = array(
+                'tipo_pagamento_id' => $arrForma[$k],
+                'valor_pago' => $arrValor[$k],
+            );
+        }
+        return $resultado;
+    }
+
+    
     
 }
