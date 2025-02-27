@@ -317,4 +317,560 @@ class JNP
     }
 
     
+    
+    public static function jnp_run($debug = FALSE)
+    {
+        $retorno = '';
+        
+        self::$request_id = uniqid();
+        self::$debug = $debug;
+        
+        $ini = AdiantiApplicationConfig::get();
+        $service = isset($ini['general']['request_log_service']) ? $ini['general']['request_log_service'] : '\SystemRequestLogService';
+        $class   = isset($_REQUEST['class'])    ? $_REQUEST['class']   : '';
+        $static  = isset($_REQUEST['static'])   ? $_REQUEST['static']  : '';
+        $method  = isset($_REQUEST['method'])   ? $_REQUEST['method']  : '';
+        
+        $content = '';
+        set_error_handler(array('AdiantiCoreApplication', 'errorHandler'));
+        
+        if (!empty($ini['general']['request_log']) && $ini['general']['request_log'] == '1')
+        {
+            if (empty($ini['general']['request_log_types']) || strpos($ini['general']['request_log_types'], 'web') !== false)
+            {
+                self::$request_id = $service::register( 'web');
+            }
+        }
+        
+        AdiantiCoreApplication::filterInput();
+        
+        $rc = new ReflectionClass($class);
+        
+        if (in_array(strtolower($class), array_map('strtolower', AdiantiClassMap::getInternalClasses()) ))
+        {
+            ob_start();
+            new TMessage( 'error', AdiantiCoreTranslator::translate('The internal class ^1 can not be executed', " <b><i><u>{$class}</u></i></b>") );
+            $content = ob_get_contents();
+            ob_end_clean();
+        }
+        else if (!$rc->isUserDefined())
+        {
+            ob_start();
+            new TMessage( 'error', AdiantiCoreTranslator::translate('The internal class ^1 can not be executed', " <b><i><u>{$class}</u></i></b>") );
+            $content = ob_get_contents();
+            ob_end_clean();
+        }
+        else if (class_exists($class))
+        {
+            if ($static)
+            {
+                $rf = new ReflectionMethod($class, $method);
+                if ($rf-> isStatic ())
+                {
+                    call_user_func(array($class, $method), $_REQUEST);
+                }
+                else
+                {
+                    call_user_func(array(new $class($_REQUEST), $method), $_REQUEST);
+                }
+            }
+            else
+            {
+                try
+                {
+                    $page = new $class( $_REQUEST );
+                    
+                    ob_start();
+                    $page->show( $_REQUEST );
+                    $content = ob_get_contents();
+                    ob_end_clean();
+                }
+                catch (Exception $e)
+                {
+                    ob_start();
+                    if ($debug)
+                    {
+                        new TExceptionView($e);
+                        $content = ob_get_contents();
+                    }
+                    else
+                    {
+                        new TMessage('error', $e->getMessage());
+                        $content = ob_get_contents();
+                    }
+                    ob_end_clean();
+                }
+                catch (Error $e)
+                {
+                    
+                    ob_start();
+                    if ($debug)
+                    {
+                        new TExceptionView($e);
+                        $content = ob_get_contents();
+                    }
+                    else
+                    {
+                        new TMessage('error', $e->getMessage());
+                        $content = ob_get_contents();
+                    }
+                    ob_end_clean();
+                }
+            }
+        }
+        else if (!empty($class))
+        {
+            new TMessage('error', AdiantiCoreTranslator::translate('Class ^1 not found', " <b><i><u>{$class}</u></i></b>") . '.<br>' . AdiantiCoreTranslator::translate('Check the class name or the file name').'.');
+        }
+        
+        if (!$static)
+        {
+            $retorno .= TPage::getLoadedCSS();
+        }
+        $retorno .= TPage::getLoadedJS();
+        
+        $retorno .= $content;
+        
+        return $retorno;
+    }
+    
+    
+    
+    // dump
+    public static function d(...$args)
+    {
+        $bt = debug_backtrace();
+        while(count($bt) and strpos($bt[0]['file'], __FILE__) !== false) array_shift($bt);
+        $title = ['d' => 'DUMP', 'dd' => 'DUMP AND DIE', 'de' => 'DUMP AND END'][$bt[0]['function']] . " {$bt[0]['file']}:{$bt[0]['line']}";
+        
+        ob_start();
+        foreach($args as $arg){
+            echo "<pre>";
+                $type = gettype($arg);
+                $typeName = $type; // Assume o tipo primitivo inicialmente.
+                
+                // Cálculo de tamanho para os tipos.
+                if ($type === 'object') {
+                    $typeName = get_class($arg) . ' (object)';
+                    $size = count((array)$arg);  // Conta o número de propriedades públicas do objeto.
+                } elseif ($type === 'array') {
+                    $typeName = 'Array (array)';
+                    $size = count($arg); // Conta o número de elementos no array.
+                } elseif ($type === 'string') {
+                    $typeName = 'String';
+                    $size = mb_strlen($arg); // Conta o número de caracteres na string.
+                } elseif ($type === 'integer' || $type === 'double' || $type === 'boolean' || $type === 'NULL') {
+                    // $size = serialize($arg); // Calcula o tamanho aproximado em bytes.
+                    $size = false;
+                }
+        
+                // Tratamento do output para cada tipo de dado.
+                $output = var_export($arg, true);
+                $txt_size = ($size !== false) ? "(size={$size})" : "";
+                if ($type === 'object' || $type === 'array') {
+                    $output = "{$typeName} {$txt_size}\n" . $output;
+                } else {
+                    $output = "{$typeName} {$txt_size} (" . $output . ")";
+                }
+                
+                highlight_string("<?php\n" . $output . "\n?>");
+                
+            echo "</pre>";
+        }
+        // $win = TWindow::create($title, 0.9999, 0.9999);
+        // $win->add(ob_get_clean());
+        // $win->show();
+        TSession::setValue('debugDump_string', base64_encode( ob_get_clean() ));
+        self::open_blank('debugDump', 'onShow', [] /* ['dump' => base64_encode( ob_get_clean() )] */);
+    }
+    
+    // dump and die
+    public static function dd(...$args) {
+        d(...$args);
+        TScript::create("
+        
+            __adianti_unblock_ui();
+            __adianti_unblock_ui();
+        
+        ");
+        die();
+    }
+    
+    // dump and exception
+    public static function de(...$args) {
+        d(...$args);
+        TScript::create("
+        
+            __adianti_unblock_ui();
+            __adianti_unblock_ui();
+        
+        ");
+        throw new Exception("Stop");
+    }
+    
+    public static function retornarNumeros($string)
+    {
+        // Utiliza expressão regular para manter apenas os números
+        return preg_replace('/\D/', '', $string);
+    }
+    
+    public static function verificaCriaPasta($pasta)
+    {
+        if (!file_exists($pasta)) {
+            // Tenta criar a pasta e suas subpastas (se necessário)
+            if (!mkdir($pasta, 0777, true)) {
+                // error_log("Erro ao criar a pasta '$pasta'. Verifique as permissões.");
+                return false;
+            }
+        }
+
+        // Verifica se a pasta existe e é gravável
+        if (!is_dir($pasta) || !is_writable($pasta)) {
+            // error_log("A pasta '$pasta' não é gravável ou não existe.");
+            return false;
+        }
+
+        return true;
+    }
+    
+    public static function deletarPasta($dir) {
+        if (!is_dir($dir)) {
+            return;
+        }
+    
+        $files = array_diff(scandir($dir), ['.', '..']);
+        
+        foreach ($files as $file) {
+            $path = "$dir/$file";
+            if (is_dir($path)) {
+                self::deletarPasta($path);
+            } else {
+                unlink($path);
+            }
+        }
+    
+        rmdir($dir);
+    }
+    
+    public static function renderApplication($param)
+    {
+        // Salva as superglobais originais
+        $original_request = $_REQUEST;
+        $original_get = $_GET;
+        $original_post = $_POST;
+        
+        // Configura $_REQUEST, $_GET e $_POST com os parâmetros necessários
+        $_REQUEST = $param;
+        $_GET = $param;
+        $_POST = []; // Supondo que seja uma requisição GET
+        
+        // Inicia o buffer de saída
+        ob_start();
+        
+        try
+        {
+            // Executa a aplicação para processar a requisição
+            AdiantiCoreApplication::run();
+        }
+        catch (Exception $e)
+        {
+            ob_clean(); // Limpa qualquer saída anterior
+            new TMessage('error', $e->getMessage());
+        }
+        
+        // Captura o conteúdo do buffer
+        $html = ob_get_contents();
+        ob_end_clean();
+        
+        // Restaura as superglobais originais
+        $_REQUEST = $original_request;
+        $_GET = $original_get;
+        $_POST = $original_post;
+        
+        // Retorna o HTML capturado
+        return $html;
+    }
+    
+    public static function renomearAtributo(&$object, $atributoAntigo, $atributoNovo){
+        if ($object->{$atributoAntigo} ?? false) {
+            $object->{$atributoNovo} = $object->{$atributoAntigo};
+            unset($object->{$atributoAntigo});
+        }
+    }
+    
+    public static function TEntry2TLabel($entrada)
+    {
+        // Captura o valor do TEntry
+        $valor = $entrada->getValue();
+        // de($entrada,$valor);
+        
+        // Cria um TLabel com o valor capturado
+        $label = new TLabel($valor);
+        
+        // Retorna o TLabel criado
+        return $label;
+    }
+    
+    public static function TCombo2TLabel($combo)
+    {
+        // Captura o valor selecionado no TCombo
+        $selected_value = $combo->getValue();
+    
+        // Obtém os itens (opções) do TCombo
+        $items = $combo->getItems();
+    
+        // Verifica se o valor selecionado está nas opções
+        $label_text = isset($items[$selected_value]) ? $items[$selected_value] : '';
+    
+        // Cria um TLabel com o valor visível (rótulo) do TCombo
+        $label = new TLabel($label_text);
+    
+        // Retorna o TLabel criado
+        return $label;
+    }
+    
+    public static function datagrid2card($class, $cardWidth = '33.333%') {
+        TScript::create("
+            var st = document.createElement('style');
+            st.innerHTML = `
+            /* Remove scroll do table-responsive */
+            .table-responsive {
+              overflow: visible !important;
+            }
+    
+            /* Forçamos a tabela a se comportar como bloco flex */
+            #{$class}_datagrid table {
+              border-collapse: separate !important;
+              display: flex !important;
+              flex-wrap: wrap;
+              margin: 0 -5px;
+            }
+            #{$class}_datagrid thead,
+            #{$class}_datagrid tfoot,
+            #{$class}_datagrid colgroup {
+              display: none !important;
+            }
+    
+            /* Cada TR vira um 'card' */
+            #{$class}_datagrid tr {
+              display: inline-block !important;
+              background: #fff;
+              border: 1px solid #ddd;
+              border-radius: 5px;
+              margin: 5px;
+              padding: 10px;
+              width: calc({$cardWidth} - 10px); /* Largura configurável */
+              box-sizing: border-box;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+              text-align: left !important; /* Alinhamento à esquerda */
+            }
+    
+            #{$class}_datagrid tr:hover {
+              box-shadow: 0 3px 6px rgba(0,0,0,0.25);
+            }
+    
+            /* Cada TD vira uma 'linha' dentro do card */
+            #{$class}_datagrid td {
+              display: flex !important;
+              padding: 5px 0;
+              border: none !important;
+              align-items: center;
+              text-align: left !important; /* Alinhamento à esquerda */
+            }
+    
+            /* Ajusta os botões de ação */
+            #{$class}_datagrid tr .tdatagrid_cell.action {
+              display: inline-flex !important; /* Alinha horizontalmente */
+              flex-wrap: nowrap;
+              justify-content: end; /* Ajusta os botões à esquerda */
+              gap: 8px; /* Espaçamento entre botões */
+              margin-bottom: 10px; /* Margem inferior entre os botões e os outros elementos */
+            }
+    
+            /* Botões individuais dentro da célula */
+            #{$class}_datagrid tr .tdatagrid_cell.action a {
+              display: inline-block; /* Garante que cada botão se comporte corretamente */
+            }
+    
+            /* Reduzindo a largura dos botões para layout mais limpo */
+            #{$class}_datagrid tr .tdatagrid_cell.action .btn {
+              min-width: auto;
+              padding: 5px 10px;
+            }
+    
+            /* Estilo para os rótulos */
+            #{$class}_datagrid td::before {
+              content: attr(data-label);
+              flex: 0 0 150px; /* Largura fixa para os rótulos */
+              font-weight: bold;
+              color: #555;
+            }
+    
+            /* Responsivo: se a tela for menor que 768px, cada card ocupa 100% */
+            @media (max-width: 768px) {
+              #{$class}_datagrid tr {
+                width: calc(100% - 10px);
+              }
+              #{$class}_datagrid td::before {
+                flex: 0 0 100px;
+              }
+            }
+            `;
+            document.head.appendChild(st);
+    
+            function mapDataLabels() {
+              var datagrid = document.getElementById('{$class}_datagrid');
+              if(datagrid){
+                var headers = [];
+    
+                var thead = datagrid.querySelector('thead');
+                if(thead){
+                  thead.querySelectorAll('th').forEach(function(th, index){
+                    if(index >= 2){
+                      headers.push(th.innerText.trim());
+                    }
+                  });
+                }
+    
+                datagrid.querySelectorAll('tbody tr').forEach(function(tr){
+                  tr.querySelectorAll('td').forEach(function(td, index){
+                    if(index >= 2 && headers[index - 2]){ 
+                      td.setAttribute('data-label', headers[index - 2] + ':');
+                    }
+                  });
+                });
+              }
+            }
+    
+            mapDataLabels();
+    
+            var datagrid = document.getElementById('{$class}_datagrid');
+            if(datagrid){
+              var tbody = datagrid.querySelector('tbody');
+              if(tbody){
+                var observer = new MutationObserver(function(mutationsList, observer){
+                  mapDataLabels();
+                });
+                observer.observe(tbody, { childList: true, subtree: true });
+              }
+            }
+        ");
+    }
+    
+    public static function tmpTblReturn($select, $conn = MAIN_DATABASE, $nmTbl = null ){
+        try {
+            
+            if(empty($nmTbl)){
+                $nmTbl = "temp_" . uniqid();
+            }
+            
+            $sql_create = "
+                DROP TEMPORARY TABLE IF EXISTS {$nmTbl};
+                CREATE TEMPORARY TABLE {$nmTbl} 
+                AS
+                {$select}
+            ";
+            $sql_load = "select * from {$nmTbl}";
+        
+            TTransaction::openFake($conn);
+            
+            // JNP::consoleLog($sql_create);
+            // JNP::consoleLog($sql_load);
+        
+                $conn = TTransaction::get();
+                $conn->exec($sql_create);
+                $result = $conn->query($sql_load);
+                $obj_results = $result->fetchAll(PDO::FETCH_CLASS, "stdClass");
+        
+            TTransaction::rollback();
+            
+            return $obj_results;
+        } catch (Exception $e) {
+            TTransaction::rollback();
+        }
+    }
+    
+    public static function connWithoutSLog($database = MAIN_DATABASE){
+        $dbinfo = TConnection::getDatabaseInfo($database);
+        unset($dbinfo['slog']);
+        return $dbinfo;
+    }
+    
+    public static function disableTCombo($formName, $name_field){
+        TScript::create("
+        
+            $('form[name=\"{$formName}\"] [name=\"$name_field\"]').select2({
+                disabled: true
+            });
+        
+        ", true, 50);
+    }
+    
+    public static function removerAcentosEEspeciais($string, $removerAcentos = true, $removerEspeciais = true) {
+        if ($removerAcentos) {
+            // Substitui os caracteres acentuados por suas versões sem acento
+            $acentos = [
+                'À','Á','Â','Ã','Ä','Å','Æ','Ç','È','É','Ê','Ë','Ì','Í','Î','Ï',
+                'Ð','Ñ','Ò','Ó','Ô','Õ','Ö','Ø','Ù','Ú','Û','Ü','Ý','Þ','ß',
+                'à','á','â','ã','ä','å','æ','ç','è','é','ê','ë','ì','í','î','ï',
+                'ð','ñ','ò','ó','ô','õ','ö','ø','ù','ú','û','ü','ý','þ','ÿ'
+            ];
+            $semAcentos = [
+                'A','A','A','A','A','A','AE','C','E','E','E','E','I','I','I','I',
+                'D','N','O','O','O','O','O','O','U','U','U','U','Y','TH','ss',
+                'a','a','a','a','a','a','ae','c','e','e','e','e','i','i','i','i',
+                'd','n','o','o','o','o','o','o','u','u','u','u','y','th','y'
+            ];
+            $string = str_replace($acentos, $semAcentos, $string);
+        }
+    
+        if ($removerEspeciais) {
+            // Remove qualquer caractere que não seja letra, número ou espaço
+            $string = preg_replace('/[^A-Za-z0-9\s]/', '', $string);
+        }
+    
+        return $string;
+    }
+    
+    public static function transformPowerActive($formName, $class, $param){
+        return function($value, $object, $row, $cell = null, $last_row = null) use ($param, $class, $formName)
+        {
+            //code here
+            // Lista de valores considerados "sim"
+            $sim_values = ['t', 'T', 's', 'S', '1', 1, true, 'true', 'on', 'yes', 'y'];
+
+            // Define a cor do ícone com base no valor
+            $color = in_array($value, $sim_values, true) ? 'green' : 'red';
+
+            // Retorna o ícone do Font Awesome com a cor correspondente
+            // $class = __CLASS__;
+            // $formName = self::$formName;
+
+            $formName = 'datagrid_' . $formName;
+            TScript::create("
+
+                $('form[name=\"{$formName}\"] .btn_yes_no_power').parent('td').removeAttr('href');
+
+            ", true, 50);
+            
+            // de(in_array( $param['method'] , ['onShow', 'manageRow']), $param);
+            
+            if( in_array( $param['method'] , ['onShow', 'onReload', 'onSearch', 'manageRow', 'onEditarCondominio']) or empty($param) ){
+
+                return "<i class='fa fa-power-off btn_yes_no_power' style='color: {$color} ; font-size: 16px; margin-left: 5px;'
+                onclick='__adianti_post_data(\"{$formName}\", \"class={$class}&method=powerClick&id={$object->id}&static=1\");return false;'
+                ></i>";
+            
+            } else {
+                if($color == 'green'){
+                    return 'Sim';
+                } else {
+                    return 'Não';
+                }
+            }
+
+        };
+    }
+
+    
 }
