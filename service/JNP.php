@@ -73,16 +73,21 @@ class JNP
         return $obj_tentry->id;
     }
     
-    public static function converterData($data, $formatoEntrada, $formatoSaida) {
+    public static function converterData($data, $formatoEntrada, $formatoSaida, $includeTime = false) {
         // Cria um objeto DateTime a partir da string de data e do formato de entrada
         $dataObjeto = DateTime::createFromFormat($formatoEntrada, $data);
-    
+        
         // Verifica se a data é válida
         if (!$dataObjeto) {
             return false;  // Retorna falso se a data for inválida
         }
     
-        // Formata a data para o novo formato e retorna
+        // Adiciona horário e fuso horário se necessário
+        if ($includeTime) {
+            $dataObjeto->setTime(0, 0, 0); // Define o horário para meia-noite, por exemplo
+        }
+    
+        // Retorna a data no formato solicitado
         return $dataObjeto->format($formatoSaida);
     }
     
@@ -152,40 +157,44 @@ class JNP
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
     
-    public static function mask_CPF_CNPJ($formName, $name){
-        
+    public static function mask_CPF_CNPJ($formName, $name) {
         TScript::create("
-        
-            var options = {
-        		onKeyPress : function(cpfcnpj, e, field, options) {
-        			var masks = ['000.000.000-000', '00.000.000/0000-00'];
-        			var mask = (cpfcnpj.length > 14) ? masks[1] : masks[0];
-        			$('form[name=\"$formName\"] [name=\"$name\"]').mask(mask, options);
-        		}
-        	};
-        
-        	$('form[name=\"$formName\"] [name=\"$name\"]').mask('000.000.000-000', options);
-
-        
+            function JNP_CHANGE_MASK_CPFCNPJ(element) {
+                    var cpfcnpj = $(element).val().replace(/[^0-9]/g, '');
+                    
+                    var mask = (cpfcnpj.length > 11) ? '00.000.000/0000-00' : '0000000.000.000-00';
+                    
+                    $(element).mask(mask, { reverse: true });
+            }
+    
+            $('form[name=\"$formName\"] [name=\"$name\"]').each(function() {
+                JNP_CHANGE_MASK_CPFCNPJ(this);
+            });
+    
+            $('form[name=\"$formName\"] [name=\"$name\"]').on('keyup change input paste', function() {
+                JNP_CHANGE_MASK_CPFCNPJ(this);
+            });
         ");
-        
     }
     
     public static function mask_fone_br($formName, $name){
         TScript::create("
-            $('form[name=\"{$formName}\"] [name=\"$name\"]').on('keyup change', function() {
-                var numero = $(this).val().replace(/\D/g,'');
-                var newMask = (numero.length <= 10) ? '(99) 9999-99999' : '(99)99999-9999';
-
-                $(this).val(numero);
-                $(this).mask(newMask);
-                $(this).data('mask', newMask);
-
-                var newLength = $(this).val().length;
-                this.setSelectionRange(newLength, newLength);
-            
-                $('form[name=\"{$formName}\"] [name=\"$name\"]').attr('autocomplete', 'on');
+            function JNP_APPLY_MASK_FONE(element) {
+                var numero = $(element).val().replace(/\D/g,'');
                 
+                var newMask = (numero.length <= 10) ? '(99) 9999-999999' : '(99) 99999-9999';
+    
+                $(element).mask(newMask);
+    
+                $(element).val($(element).masked(numero));
+            }
+    
+            $('form[name=\"$formName\"] [name=\"$name\"]').each(function() {
+                JNP_APPLY_MASK_FONE(this);
+            });
+    
+            $('form[name=\"$formName\"] [name=\"$name\"]').on('keyup change input', function() {
+                JNP_APPLY_MASK_FONE(this);
             });
         ");
     }
@@ -244,24 +253,14 @@ class JNP
         ");
     }
     
-    public static function logTxt($class){
+    public static function logTxt($class) {
+        $directory = 'app/resources/log/';
         
-        $dirPath = 'app/resources/log';
-        if (!is_dir($dirPath)) {
-            // Tenta criar o diretório e define as permissões (0777 permite leitura, escrita e execução para todos os usuários)
-            if (mkdir($dirPath, 0775, true)) {
-                // echo "Diretório '$dirPath' criado com sucesso.";
-            } else {
-                // echo "Falha ao criar o diretório '$dirPath'.";
-            }
-        } else {
-            // echo "O diretório '$dirPath' já existe.";
+        if (!is_dir($directory) && !mkdir($directory, 0755, true)) {
+            throw new RuntimeException("Falha ao criar diretório de log: $directory");
         }
-        
-        if (is_dir($dirPath)) {
-            TTransaction::setLogger(new TLoggerTXT('app/resources/log/log_' . $class . '_' . date('Ymd') . '.txt'));
-        }
-        
+    
+        TTransaction::setLogger(new TLoggerTXT($directory . 'log_' . $class . '_' . date('Ymd') . '.txt'));
     }
     
     public static function cpfCnpjHideParcial($value) {
@@ -871,6 +870,62 @@ class JNP
 
         };
     }
+
+    public static function is_uuid($uuid)
+    {
+        // Regex para validar UUID no formato padrão (versão 1-5)
+        $pattern = '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i';
+        return (bool) preg_match($pattern, $uuid);
+    }
+
+    
+    public static function combinarFormaValor($arrForma, $arrValor) {
+        $resultado = array();
+
+        foreach ($arrForma as $k => $v){
+            $resultado[$k] = array(
+                'tipo_pagamento_id' => $arrForma[$k],
+                'valor_pago' => $arrValor[$k],
+            );
+        }
+        return $resultado;
+    }
+
+    public static function combinarArrayDinamico($arrays) {
+        $resultado = array();
+
+        $chaves = array_keys($arrays);
+        $tamanho = count($arrays[$chaves[0]]);
+
+        for ($i = 0; $i < $tamanho; $i++) {
+            $item = array();
+            foreach ($arrays as $chave => $valores) {
+                $item[$chave] = $valores[$i];
+            }
+            $resultado[] = $item;
+        }
+
+        // LibUtil::meu_vardump($resultado);
+        return $resultado;
+    }
+
+    public static function is_date($date){
+        try {
+            new DateTime($date);
+            return true;
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    public static function post_data($formName, $class, $method, $param = []){
+        $query = AdiantiCoreApplication::buildHttpQuery($class, $method, $param);
+        $query = str_replace('index.php', 'engine.php', $query);
+        $command = "__jnp_post_data('{$formName}', '{$query}');";
+        // echo $command;
+        TScript::create($command, true, 1);
+    }
+    
 
     
 }
