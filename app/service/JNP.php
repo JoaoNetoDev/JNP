@@ -601,6 +601,259 @@ class JNP
         }
     }
 
+    public static function isDateOrDateTime($value): bool
+    {
+        return self::isDate($value) || self::isDateTime($value);
+    }
+
+    public static function isDateTime($value): bool
+    {
+        $format = 'Y-m-d H:i:s';
+        $dateTime = DateTime::createFromFormat($format, $value);
+        return $dateTime && $dateTime->format($format) === $value;
+    }
+
+    public static function removerAcentosEEspeciais($string, $removerAcentos = true, $removerEspeciais = true) {
+        if ($removerAcentos) {
+            // Substitui os caracteres acentuados por suas versões sem acento
+            $acentos = [
+                'À','Á','Â','Ã','Ä','Å','Æ','Ç','È','É','Ê','Ë','Ì','Í','Î','Ï',
+                'Ð','Ñ','Ò','Ó','Ô','Õ','Ö','Ø','Ù','Ú','Û','Ü','Ý','Þ','ß',
+                'à','á','â','ã','ä','å','æ','ç','è','é','ê','ë','ì','í','î','ï',
+                'ð','ñ','ò','ó','ô','õ','ö','ø','ù','ú','û','ü','ý','þ','ÿ'
+            ];
+            $semAcentos = [
+                'A','A','A','A','A','A','AE','C','E','E','E','E','I','I','I','I',
+                'D','N','O','O','O','O','O','O','U','U','U','U','Y','TH','ss',
+                'a','a','a','a','a','a','ae','c','e','e','e','e','i','i','i','i',
+                'd','n','o','o','o','o','o','o','u','u','u','u','y','th','y'
+            ];
+            $string = str_replace($acentos, $semAcentos, $string);
+        }
     
+        if ($removerEspeciais) {
+            // Remove qualquer caractere que não seja letra, número ou espaço
+            $string = preg_replace('/[^A-Za-z0-9\s]/', '', $string);
+        }
+    
+        return $string;
+    }
+    
+    public static function transformPowerActive($formName, $class, $param){
+        return function($value, $object, $row, $cell = null, $last_row = null) use ($param, $class, $formName)
+        {
+            //code here
+            // Lista de valores considerados "sim"
+            $sim_values = ['t', 'T', 's', 'S', '1', 1, true, 'true', 'on', 'yes', 'y'];
+
+            // Define a cor do ícone com base no valor
+            $color = in_array($value, $sim_values, true) ? 'green' : 'red';
+
+            // Retorna o ícone do Font Awesome com a cor correspondente
+            // $class = __CLASS__;
+            // $formName = self::$formName;
+
+            $formName = 'datagrid_' . $formName;
+            TScript::create("
+
+                $('form[name=\"{$formName}\"] .btn_yes_no_power').parent('td').removeAttr('href');
+
+            ", true, 50);
+            
+            // de(in_array( $param['method'] , ['onShow', 'manageRow']), $param);
+            
+            if( in_array( $param['method'] , ['onShow', 'onReload', 'onSearch', 'manageRow', 'onEditarCondominio']) or empty($param) ){
+
+                return "<i class='fa fa-power-off btn_yes_no_power' style='color: {$color} ; font-size: 16px; margin-left: 5px;'
+                onclick='__adianti_post_data(\"{$formName}\", \"class={$class}&method=powerClick&id={$object->id}&static=1\");return false;'
+                ></i>";
+            
+            } else {
+                if($color == 'green'){
+                    return 'Sim';
+                } else {
+                    return 'Não';
+                }
+            }
+
+        };
+    }
+
+    public static function datagrid2card($class, $cardWidth = '33.333%') {
+        TScript::create("
+            var st = document.createElement('style');
+            st.innerHTML = `
+            /* Remove scroll do table-responsive */
+            .table-responsive {
+              overflow: visible !important;
+            }
+    
+            /* Forçamos a tabela a se comportar como bloco flex */
+            #{$class}_datagrid table {
+              border-collapse: separate !important;
+              display: flex !important;
+              flex-wrap: wrap;
+              margin: 0 -5px;
+            }
+            #{$class}_datagrid thead,
+            #{$class}_datagrid tfoot,
+            #{$class}_datagrid colgroup {
+              display: none !important;
+            }
+    
+            /* Cada TR vira um 'card' */
+            #{$class}_datagrid tr {
+              display: inline-block !important;
+              background: #fff;
+              border: 1px solid #ddd;
+              border-radius: 5px;
+              margin: 5px;
+              padding: 10px;
+              width: calc({$cardWidth} - 10px); /* Largura configurável */
+              box-sizing: border-box;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+              text-align: left !important; /* Alinhamento à esquerda */
+            }
+    
+            #{$class}_datagrid tr:hover {
+              box-shadow: 0 3px 6px rgba(0,0,0,0.25);
+            }
+    
+            /* Cada TD vira uma 'linha' dentro do card */
+            #{$class}_datagrid td {
+              display: flex !important;
+              padding: 5px 0;
+              border: none !important;
+              align-items: center;
+              text-align: left !important; /* Alinhamento à esquerda */
+            }
+    
+            /* Ajusta os botões de ação */
+            #{$class}_datagrid tr .tdatagrid_cell.action {
+              display: inline-flex !important; /* Alinha horizontalmente */
+              flex-wrap: nowrap;
+              justify-content: end; /* Ajusta os botões à esquerda */
+              gap: 8px; /* Espaçamento entre botões */
+              margin-bottom: 10px; /* Margem inferior entre os botões e os outros elementos */
+            }
+    
+            /* Botões individuais dentro da célula */
+            #{$class}_datagrid tr .tdatagrid_cell.action a {
+              display: inline-block; /* Garante que cada botão se comporte corretamente */
+            }
+    
+            /* Reduzindo a largura dos botões para layout mais limpo */
+            #{$class}_datagrid tr .tdatagrid_cell.action .btn {
+              min-width: auto;
+              padding: 5px 10px;
+            }
+    
+            /* Estilo para os rótulos */
+            #{$class}_datagrid td::before {
+              content: attr(data-label);
+              flex: 0 0 150px; /* Largura fixa para os rótulos */
+              font-weight: bold;
+              color: #555;
+            }
+    
+            /* Responsivo: se a tela for menor que 768px, cada card ocupa 100% */
+            @media (max-width: 768px) {
+              #{$class}_datagrid tr {
+                width: calc(100% - 10px);
+              }
+              #{$class}_datagrid td::before {
+                flex: 0 0 100px;
+              }
+            }
+            `;
+            document.head.appendChild(st);
+    
+            function mapDataLabels() {
+              var datagrid = document.getElementById('{$class}_datagrid');
+              if(datagrid){
+                var headers = [];
+    
+                var thead = datagrid.querySelector('thead');
+                if(thead){
+                  thead.querySelectorAll('th').forEach(function(th, index){
+                    if(index >= 2){
+                      headers.push(th.innerText.trim());
+                    }
+                  });
+                }
+    
+                datagrid.querySelectorAll('tbody tr').forEach(function(tr){
+                  tr.querySelectorAll('td').forEach(function(td, index){
+                    if(index >= 2 && headers[index - 2]){ 
+                      td.setAttribute('data-label', headers[index - 2] + ':');
+                    }
+                  });
+                });
+              }
+            }
+    
+            mapDataLabels();
+    
+            var datagrid = document.getElementById('{$class}_datagrid');
+            if(datagrid){
+              var tbody = datagrid.querySelector('tbody');
+              if(tbody){
+                var observer = new MutationObserver(function(mutationsList, observer){
+                  mapDataLabels();
+                });
+                observer.observe(tbody, { childList: true, subtree: true });
+              }
+            }
+        ");
+    }
+
+    public static function tmpTblReturn($select, $conn = MAIN_DATABASE, $nmTbl = null ){
+        try {
+            
+            if(empty($nmTbl)){
+                $nmTbl = "temp_" . uniqid();
+            }
+            
+            $sql_create = "
+                DROP TEMPORARY TABLE IF EXISTS {$nmTbl};
+                CREATE TEMPORARY TABLE {$nmTbl} 
+                AS
+                {$select}
+            ";
+            $sql_load = "select * from {$nmTbl}";
+        
+            TTransaction::openFake($conn);
+            
+            // JNP::consoleLog($sql_create);
+            // JNP::consoleLog($sql_load);
+        
+                $conn = TTransaction::get();
+                $conn->exec($sql_create);
+                $result = $conn->query($sql_load);
+                $obj_results = $result->fetchAll(PDO::FETCH_CLASS, "stdClass");
+        
+            TTransaction::rollback();
+            
+            return $obj_results;
+        } catch (Exception $e) {
+            TTransaction::rollback();
+        }
+    }
+
+    public static function connWithoutSLog($database = MAIN_DATABASE){
+        $dbinfo = TConnection::getDatabaseInfo($database);
+        unset($dbinfo['slog']);
+        return $dbinfo;
+    }
+
+    public static function disableTCombo($formName, $name_field){
+        TScript::create("
+        
+            $('form[name=\"{$formName}\"] [name=\"$name_field\"]').select2({
+                disabled: true
+            });
+        
+        ", true, 50);
+    }
     
 }
