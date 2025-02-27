@@ -58,6 +58,48 @@ Esta funÃ§Ã£o Ã© uma cÃ³pia modificada da parte JS de AdiantiCoreApplica
     }
 }
 
+function __jnp_post_data(t, i) {
+    a = i;
+    if (document.querySelector("#" + t) instanceof Node) {
+        if (!document.querySelector("#" + t).hasAttribute("novalidate") && document.querySelector("#" + t).checkValidity() == false) {
+            document.querySelector("#" + t).reportValidity();
+            return;
+        }
+    }
+    __adianti_block_ui();
+    data = $("#" + t).serialize();
+    __adianti_run_before_posts(a);
+    if (a.indexOf("&static=1") > 0 || a.indexOf("?static=1") > 0 || i.substring(0, 4) == "xhr-") {
+        $.post(a, data)
+            .done(function (t) {
+                __adianti_parse_html(t);
+                __adianti_unblock_ui();
+                Adianti.requestURL = a;
+                Adianti.requestData = data;
+                __adianti_run_after_posts(a, t);
+            })
+            .fail(function (t, i, a) {
+                __adianti_unblock_ui();
+                __adianti_failure_request(t, i, a);
+                loading = false;
+            });
+    } else {
+        $.post(a, data)
+            .done(function (t) {
+                Adianti.currentURL = a;
+                Adianti.requestURL = a;
+                Adianti.requestData = data;
+                __adianti_load_html(t, __adianti_run_after_posts, a);
+                __adianti_unblock_ui();
+            })
+            .fail(function (t, i, a) {
+                __adianti_unblock_ui();
+                __adianti_failure_request(t, i, a);
+                loading = false;
+            });
+    }
+}
+
 function bdaterange_start(b, a) {
     let c = document.getElementById(a.id_start),
         e = document.getElementById(a.id_end);
@@ -186,7 +228,6 @@ function copyToClipboard(text) {
 }
 
 
-
 function ttable_replace_row_by_id(a, b, c) {
     var tbody = $("#" + a + " tbody");
     var row = tbody.find("#" + b);
@@ -197,4 +238,23 @@ function ttable_replace_row_by_id(a, b, c) {
     } else {
         tbody.prepend(decodedContent);
     }
+}
+
+
+function tdate_start(a, b, c, d, h) {
+    $(a).wrap('<div class="tdate-group date">');
+    $(a).after('<span class="btn btn-default tdate-group-addon"><i class="far fa-calendar"></i></span>');
+    h = Object.assign({ format: b, todayBtn: "linked", language: c, calendarWeeks: !1, autoclose: !0, todayHighlight: !0, orientation: "auto auto" }, JSON.parse(h));
+    $(a)
+        .closest(".tdate-group")
+        .datepicker(h)
+        .on("changeDate", function (f) {
+            $(a).attr("exitaction") && new Function($(a).attr("exitaction"))();
+        })
+        .on("show", function () {
+            $(".datepicker").on("click", function (f) {
+                f.stopPropagation();
+            });
+        });
+    "undefined" !== d && $(a).closest(".tdate-group").width(d);
 }
